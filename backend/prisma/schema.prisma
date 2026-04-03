@@ -1,0 +1,98 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String
+  password  String
+  role      Role     @default(USER)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  sessions  InterviewSession[]
+  resumes   Resume[]
+
+  @@map("users")
+}
+
+model InterviewSession {
+  id           String        @id @default(cuid())
+  userId       String
+  type         InterviewType
+  role         String
+  status       SessionStatus @default(IN_PROGRESS)
+  overallScore Int?
+  durationSecs Int?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  questions Question[]
+  feedback  Feedback?
+
+  @@map("interview_sessions")
+}
+
+model Question {
+  id        String   @id @default(cuid())
+  sessionId String
+  content   String
+  answer    String?
+  score     Int?
+  createdAt DateTime @default(now())
+
+  session InterviewSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@map("questions")
+}
+
+model Feedback {
+  id           String   @id @default(cuid())
+  sessionId    String   @unique
+  strengths    String[]
+  improvements String[]
+  summary      String
+  createdAt    DateTime @default(now())
+
+  session InterviewSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@map("feedback")
+}
+
+model Resume {
+  id         String   @id @default(cuid())
+  userId     String
+  fileName   String
+  fileUrl    String
+  parsedText String?
+  score      Int?
+  createdAt  DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("resumes")
+}
+
+enum Role {
+  USER
+  ADMIN
+}
+
+enum InterviewType {
+  BEHAVIORAL
+  TECHNICAL
+  SYSTEM_DESIGN
+  CASE_STUDY
+}
+
+enum SessionStatus {
+  IN_PROGRESS
+  COMPLETED
+  ABANDONED
+}
