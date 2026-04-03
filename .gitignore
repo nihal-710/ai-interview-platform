@@ -1,6 +1,40 @@
+# Dependencies
 node_modules/
+
+# Environment variables — NEVER commit these
 .env
+.env.local
+.env.development
+.env.production
+.env.test
+.env*.local
+
+# Next.js
 .next/
+out/
+build/
+
+# Prisma generated client only
+backend/src/generated/
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor
+.vscode/settings.json
+.idea/
+
+# TypeScript
+*.tsbuildinfo
+next-env.d.ts
+
+# Misc
+.vercel
+.turbo
 dist/
-coverage/
-.vscode/
