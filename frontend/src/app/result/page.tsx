@@ -177,32 +177,50 @@ export default function ResultPage() {
       </div>
 
       {/* Question breakdown */}
-      <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '16px', padding: '1.5rem' }}>
-        <h2 style={{ fontWeight: 700, marginBottom: '1.25rem' }}>Question Breakdown</h2>
-        {(result.questionScores as QuestionScore[]).map((q, i) => (
-          <div key={q.questionId} style={{ padding: '1rem 0', borderBottom: '1px solid var(--border)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.5rem' }}>
-              <div style={{ flex: 1, marginRight: '1rem' }}>
-                <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
-                  Q{i + 1} · {q.category}
-                </p>
-                <p style={{ fontSize: '0.875rem', fontWeight: 600 }}>{q.content}</p>
-              </div>
-              <span style={{ fontSize: '1rem', fontWeight: 800, color: q.answered ? (q.score >= 70 ? '#00E5B0' : '#FFD166') : '#FF6B6B', flexShrink: 0 }}>
-                {q.answered ? `${q.score}%` : 'Skipped'}
-              </span>
-            </div>
-            {q.answer && (
-              <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', lineHeight: 1.6, marginTop: '0.5rem', padding: '0.75rem', background: 'var(--bg-surface)', borderRadius: '8px' }}>
-                {q.answer.length > 200 ? q.answer.slice(0, 200) + '...' : q.answer}
-              </p>
-            )}
-            {!q.answered && (
-              <p style={{ fontSize: '0.8rem', color: '#FF6B6B', marginTop: '0.25rem' }}>No answer submitted</p>
-            )}
-          </div>
-        ))}
+<div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '16px', padding: '1.5rem' }}>
+  <h2 style={{ fontWeight: 700, marginBottom: '1.25rem' }}>Question Breakdown</h2>
+  {(result.questionScores as QuestionScore[]).map((q, i) => (
+    <div key={q.questionId} style={{ padding: '1rem 0', borderBottom: '1px solid var(--border)' }}>
+
+      {/* Question header — title + score */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.75rem' }}>
+        <div style={{ flex: 1, marginRight: '1rem' }}>
+          <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
+            Q{i + 1} · {q.category}
+          </p>
+          <p style={{ fontSize: '0.875rem', fontWeight: 600, lineHeight: 1.5 }}>
+            {q.content}
+          </p>
+        </div>
+        <span style={{ fontSize: '1rem', fontWeight: 800, flexShrink: 0, color: q.answered ? (q.score >= 70 ? '#00E5B0' : '#FFD166') : '#FF6B6B' }}>
+          {q.answered ? `${q.score}%` : 'Skipped'}
+        </span>
       </div>
+
+      {/* User answer */}
+      {q.answer && (
+        <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', lineHeight: 1.6, padding: '0.75rem', background: 'var(--bg-surface)', borderRadius: '8px', marginBottom: '0.5rem' }}>
+          {q.answer.length > 200 ? q.answer.slice(0, 200) + '...' : q.answer}
+        </p>
+      )}
+
+      {/* AI feedback per question */}
+      {(q as any).feedback && (
+        <p style={{ fontSize: '0.8rem', color: 'var(--accent)', lineHeight: 1.6, padding: '0.5rem 0.75rem', background: 'rgba(108,99,255,0.08)', borderRadius: '8px', borderLeft: '3px solid var(--accent)', fontStyle: 'italic', marginBottom: '0.25rem' }}>
+          AI Feedback: {(q as any).feedback}
+        </p>
+      )}
+
+      {/* Skipped message */}
+      {!q.answered && (
+        <p style={{ fontSize: '0.8rem', color: '#FF6B6B' }}>
+          No answer submitted
+        </p>
+      )}
+
+    </div>
+  ))}
+</div>
 
       {/* AI Feedback */}
       <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '16px', padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>

@@ -1,10 +1,7 @@
 import { sendSuccess, sendError } from '../utils/response.js'
-import { prisma } from '../config/prisma.js'
+import { prisma }                 from '../config/prisma.js'
+import { checkOllamaHealth }      from '../services/aiService.js'
 
-/**
- * GET /api/health
- * Basic liveness check
- */
 export const getHealth = (req, res) => {
   sendSuccess(res, 200, 'Server is healthy', {
     status:    'ok',
@@ -14,25 +11,19 @@ export const getHealth = (req, res) => {
   })
 }
 
-/**
- * GET /api/health/ready
- * Readiness check — now actually pings the database
- */
 export const getReadiness = async (req, res) => {
   try {
-    // $queryRaw sends a real query to PostgreSQL to confirm connection
     await prisma.$queryRaw`SELECT 1`
+    const ai = await checkOllamaHealth()
 
     sendSuccess(res, 200, 'Server is ready', {
       status:   'ready',
       services: {
         database:  'connected',
-        aiService: 'not connected yet',
+        aiService: ai.available ? `connected — models: ${ai.models.join(', ')}` : 'unavailable (fallback active)',
       },
     })
   } catch (error) {
-    sendError(res, 503, 'Database not reachable', {
-      database: error.message,
-    })
+    sendError(res, 503, 'Database not reachable', { database: error.message })
   }
 }

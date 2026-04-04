@@ -1,13 +1,13 @@
-import { prisma }       from '../config/prisma.js'
-import { scoreSession } from './scoringService.js'
+import { prisma }                                          from '../config/prisma.js'
+import { scoreSession }                                    from './scoringService.js'
+import { evaluateAnswer, generateSessionSummary }          from './aiService.js'
 
 // ─────────────────────────────────────────
-// GENERATE RESULT
+// GENERATE RESULT — now uses AI evaluation
 // ─────────────────────────────────────────
 export const generateResult = async (sessionId, userId) => {
-  // 1. Fetch full session with questions and responses
   const session = await prisma.interviewSession.findFirst({
-    where: { id: sessionId, userId },
+    where:   { id: sessionId, userId },
     include: {
       questions: {
         orderBy: { orderIndex: 'asc' },
@@ -15,50 +15,110 @@ export const generateResult = async (sessionId, userId) => {
       },
     },
   })
-
   if (!session) return null
 
-  // 2. Run scoring engine
-  const scored = scoreSession(session)
+  console.log(`[RESULT] Evaluating ${session.questions.length} answers with AI...`)
 
-  // 3. Save result to DB (upsert — safe to regenerate)
+  // Evaluate each answer with AI
+  const questionEvaluations = await Promise.all(
+    session.questions.map(async (q) => {
+      const answer = q.response?.answer || ''
+
+      const evaluation = await evaluateAnswer(q.content, answer, session.type)
+
+      // Save AI feedback back to response
+      if (q.response) {
+        await prisma.response.update({
+          where: { id: q.response.id },
+          data: {
+            score:      evaluation.score,
+            aiFeedback: evaluation.feedback,
+          },
+        })
+      }
+
+      return {
+        questionId:   q.id,
+        orderIndex:   q.orderIndex,
+        content:      q.content,
+        category:     q.category,
+        answer:       answer || null,
+        answered:     !!q.response,
+        score:        evaluation.score,
+        feedback:     evaluation.feedback,
+        strengths:    evaluation.strengths,
+        improvements: evaluation.improvements,
+      }
+    })
+  )
+
+  // Generate session-level summary with AI
+  const aiSummary = await generateSessionSummary(
+    session.targetRole,
+    session.type,
+    questionEvaluations
+  )
+
+  // Calculate aggregate scores
+  const answered         = questionEvaluations.filter((q) => q.answered)
+  const completionScore  = Math.round((answered.length / session.questions.length) * 100)
+  const avgAnswerScore   = answered.length > 0
+    ? Math.round(answered.reduce((sum, q) => sum + q.score, 0) / answered.length)
+    : 0
+
+  // Overall score — weighted average
+  const overallScore = Math.round(completionScore * 0.3 + avgAnswerScore * 0.7)
+
+  // Collect all strengths and improvements
+  const allStrengths    = [...new Set([
+    ...aiSummary.topStrengths,
+    ...questionEvaluations.flatMap((q) => q.strengths).slice(0, 2),
+  ])].slice(0, 4)
+
+  const allImprovements = [...new Set([
+    ...aiSummary.topImprovements,
+    ...questionEvaluations.flatMap((q) => q.improvements).slice(0, 2),
+  ])].slice(0, 4)
+
+  const sessionSummary = `${aiSummary.overallFeedback} Next step: ${aiSummary.nextSteps}`
+
+  // Save result
   const result = await prisma.result.upsert({
     where:  { sessionId },
     update: {
-      overallScore:      scored.overallScore,
-      completionScore:   scored.completionScore,
-      answerLengthScore: scored.answerLengthScore,
-      keywordScore:      scored.keywordScore,
-      questionScores:    scored.questionScores,
-      strengthAreas:     scored.strengthAreas,
-      improvementAreas:  scored.improvementAreas,
-      sessionSummary:    scored.sessionSummary,
-      totalQuestions:    scored.totalQuestions,
-      answeredQuestions: scored.answeredQuestions,
-      scoringVersion:    scored.scoringVersion,
+      overallScore,
+      completionScore,
+      answerLengthScore: aiSummary.communicationScore,
+      keywordScore:      aiSummary.technicalScore,
+      questionScores:    questionEvaluations,
+      strengthAreas:     allStrengths,
+      improvementAreas:  allImprovements,
+      sessionSummary,
+      totalQuestions:    session.questions.length,
+      answeredQuestions: answered.length,
+      scoringVersion:    'v2-ollama',
       updatedAt:         new Date(),
     },
     create: {
       sessionId,
       userId,
-      overallScore:      scored.overallScore,
-      completionScore:   scored.completionScore,
-      answerLengthScore: scored.answerLengthScore,
-      keywordScore:      scored.keywordScore,
-      questionScores:    scored.questionScores,
-      strengthAreas:     scored.strengthAreas,
-      improvementAreas:  scored.improvementAreas,
-      sessionSummary:    scored.sessionSummary,
-      totalQuestions:    scored.totalQuestions,
-      answeredQuestions: scored.answeredQuestions,
-      scoringVersion:    scored.scoringVersion,
+      overallScore,
+      completionScore,
+      answerLengthScore: aiSummary.communicationScore,
+      keywordScore:      aiSummary.technicalScore,
+      questionScores:    questionEvaluations,
+      strengthAreas:     allStrengths,
+      improvementAreas:  allImprovements,
+      sessionSummary,
+      totalQuestions:    session.questions.length,
+      answeredQuestions: answered.length,
+      scoringVersion:    'v2-ollama',
     },
   })
 
-  // 4. Update session overall score
   await prisma.interviewSession.update({
     where: { id: sessionId },
-    data:  { overallScore: scored.overallScore },
+    data:  { overallScore },
   })
 
   return result
@@ -68,11 +128,8 @@ export const generateResult = async (sessionId, userId) => {
 // GET RESULT BY SESSION
 // ─────────────────────────────────────────
 export const getResultBySession = async (sessionId, userId) => {
-  const result = await prisma.result.findFirst({
-    where: {
-      sessionId,
-      userId,
-    },
+  return prisma.result.findFirst({
+    where:   { sessionId, userId },
     include: {
       session: {
         select: {
@@ -85,8 +142,6 @@ export const getResultBySession = async (sessionId, userId) => {
       },
     },
   })
-
-  return result
 }
 
 // ─────────────────────────────────────────

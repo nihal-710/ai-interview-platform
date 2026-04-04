@@ -1,25 +1,25 @@
-import { generateResult } from './resultService.js'
-import { prisma }                  from '../config/prisma.js'
-import { getQuestionsForSession }  from '../data/questionBank.js'
-
+import { prisma }            from '../config/prisma.js'
+import { generateResult }    from './resultService.js'
+import { generateQuestions } from './aiService.js'
 
 // ─────────────────────────────────────────
-// CREATE SESSION
+// CREATE SESSION — now uses AI questions
 // ─────────────────────────────────────────
-export const createSession = async (userId, interviewType, targetRole) => {
-  // 1. Get questions from bank (AI later)
-  const rawQuestions = getQuestionsForSession(interviewType, targetRole, 5)
+export const createSession = async (userId, interviewType, targetRole, difficulty = 'medium') => {
+  console.log(`[INTERVIEW] Generating AI questions for ${targetRole} — ${interviewType}`)
 
-  // 2. Create session + questions in one transaction
+  // Generate questions via AI (falls back to static if Ollama down)
+  const aiQuestions = await generateQuestions(targetRole, interviewType, difficulty)
+
   const session = await prisma.interviewSession.create({
     data: {
       userId,
-      type:          interviewType,
+      type:           interviewType,
       targetRole,
-      status:        'IN_PROGRESS',
-      totalQuestions: rawQuestions.length,
+      status:         'IN_PROGRESS',
+      totalQuestions: aiQuestions.length,
       questions: {
-        create: rawQuestions.map((q) => ({
+        create: aiQuestions.map((q) => ({
           content:    q.content,
           orderIndex: q.orderIndex,
           category:   q.category,
@@ -28,9 +28,7 @@ export const createSession = async (userId, interviewType, targetRole) => {
       },
     },
     include: {
-      questions: {
-        orderBy: { orderIndex: 'asc' },
-      },
+      questions: { orderBy: { orderIndex: 'asc' } },
     },
   })
 
@@ -41,8 +39,8 @@ export const createSession = async (userId, interviewType, targetRole) => {
 // GET SESSION BY ID
 // ─────────────────────────────────────────
 export const getSessionById = async (sessionId, userId) => {
-  const session = await prisma.interviewSession.findFirst({
-    where: { id: sessionId, userId },
+  return prisma.interviewSession.findFirst({
+    where:   { id: sessionId, userId },
     include: {
       questions: {
         orderBy: { orderIndex: 'asc' },
@@ -51,7 +49,6 @@ export const getSessionById = async (sessionId, userId) => {
       feedback: true,
     },
   })
-  return session
 }
 
 // ─────────────────────────────────────────
@@ -72,21 +69,17 @@ export const getUserSessions = async (userId) => {
 // SUBMIT RESPONSE
 // ─────────────────────────────────────────
 export const submitResponse = async (sessionId, questionId, userId, answer, timeTaken) => {
-  // 1. Verify session belongs to user
   const session = await prisma.interviewSession.findFirst({
     where: { id: sessionId, userId, status: 'IN_PROGRESS' },
   })
-
   if (!session) return null
 
-  // 2. Upsert response (create or update if re-answering)
   const response = await prisma.response.upsert({
     where:  { questionId },
     update: { answer, timeTaken, updatedAt: new Date() },
     create: { questionId, answer, timeTaken },
   })
 
-  // 3. Update answered count on session
   const answeredCount = await prisma.response.count({
     where: { question: { sessionId } },
   })
@@ -103,44 +96,41 @@ export const submitResponse = async (sessionId, questionId, userId, answer, time
 // COMPLETE SESSION
 // ─────────────────────────────────────────
 export const completeSession = async (sessionId, userId) => {
-  // 1. Verify ownership
   const session = await prisma.interviewSession.findFirst({
     where:   { id: sessionId, userId },
     include: { questions: { include: { response: true } } },
   })
-
   if (!session) return null
 
-  // 2. Calculate a simple score (answered / total * 100)
   const answered = session.questions.filter((q) => q.response).length
   const score    = Math.round((answered / session.questions.length) * 100)
 
-  // 3. Create placeholder feedback (AI will replace this)
-  const feedback = await prisma.feedback.upsert({
+  await prisma.feedback.upsert({
     where:  { sessionId },
     update: {},
     create: {
       sessionId,
-      strengths:    ['Good effort completing the session', 'Showed willingness to answer all questions'],
-      improvements: ['Practice structuring answers using the STAR method', 'Work on providing specific examples'],
-      summary:      `You completed ${answered} out of ${session.questions.length} questions with a score of ${score}%. AI-powered detailed feedback coming soon.`,
+      strengths:    ['Completed the interview session'],
+      improvements: ['Review your answers and practice regularly'],
+      summary:      `Completed ${answered}/${session.questions.length} questions.`,
     },
   })
 
-  // 4. Mark session complete
   const completed = await prisma.interviewSession.update({
     where: { id: sessionId },
     data: {
-      status:      'COMPLETED',
+      status:       'COMPLETED',
       overallScore: score,
       completedAt:  new Date(),
     },
-    include: { questions: { include: { response: true } }, feedback: true },
+    include: {
+      questions: { include: { response: true } },
+      feedback:  true,
+    },
   })
 
-
-  // Auto-generate result when session completes
-  await generateResult(sessionId, userId) 
+  // Auto-generate AI result
+  await generateResult(sessionId, userId)
 
   return completed
 }
