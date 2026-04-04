@@ -1,5 +1,7 @@
+import { generateResult } from './resultService.js'
 import { prisma }                  from '../config/prisma.js'
 import { getQuestionsForSession }  from '../data/questionBank.js'
+
 
 // ─────────────────────────────────────────
 // CREATE SESSION
@@ -135,6 +137,10 @@ export const completeSession = async (sessionId, userId) => {
     },
     include: { questions: { include: { response: true } }, feedback: true },
   })
+
+
+  // Auto-generate result when session completes
+  await generateResult(sessionId, userId) 
 
   return completed
 }

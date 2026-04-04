@@ -20,6 +20,7 @@ model User {
 
   sessions InterviewSession[]
   resumes  Resume[]
+  results  Result[]  
 
   @@map("users")
 }
@@ -45,6 +46,7 @@ model InterviewSession {
   user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
   questions Question[]
   feedback  Feedback?
+  result    Result? 
 
   @@map("interview_sessions")
 }
@@ -102,6 +104,36 @@ model Feedback {
   session InterviewSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 
   @@map("feedback")
+}
+
+// ─────────────────────────────────────────
+// RESULT
+// Evaluated output of a completed session
+// AI scoring replaces placeholder later
+// ─────────────────────────────────────────
+model Result {
+  id                String   @id @default(cuid())
+  sessionId         String   @unique
+  userId            String
+  overallScore      Int
+  completionScore   Int
+  answerLengthScore Int
+  keywordScore      Int
+  questionScores    Json
+  strengthAreas     String[]
+  improvementAreas  String[]
+  sessionSummary    String
+  totalQuestions    Int
+  answeredQuestions Int
+  totalTimeSecs     Int?
+  scoringVersion    String   @default("v1-placeholder")
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  session InterviewSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  user    User             @relation(fields: [userId],    references: [id], onDelete: Cascade)
+
+  @@map("results")
 }
 
 // ─────────────────────────────────────────
