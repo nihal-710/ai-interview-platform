@@ -2,10 +2,10 @@ import Link from 'next/link'
 
 export default function InterviewPage() {
   const types = [
-    { tag: 'BEHAVIORAL',   title: 'Behavioral Interview',  desc: 'STAR-method questions about your experience, leadership, and teamwork.',      duration: '20–30 min', color: '#6C63FF' },
-    { tag: 'TECHNICAL',    title: 'Technical Interview',   desc: 'Data structures, algorithms, and system-level problem solving.',               duration: '45–60 min', color: '#00E5B0' },
-    { tag: 'SYSTEM DESIGN',title: 'System Design',         desc: 'Design scalable systems: APIs, databases, microservices architecture.',         duration: '45 min',    color: '#FFD166' },
-    { tag: 'CASE STUDY',   title: 'Case Study',            desc: 'Business and product case questions, metrics, and strategic thinking.',         duration: '30–40 min', color: '#FF6B6B' },
+    { tag: 'BEHAVIORAL',    title: 'Behavioral Interview', desc: 'STAR-method questions about your experience, leadership, and teamwork.',    duration: '20–30 min', color: '#6C63FF' },
+    { tag: 'TECHNICAL',     title: 'Technical Interview',  desc: 'Data structures, algorithms, and system-level problem solving.',             duration: '45–60 min', color: '#00E5B0' },
+    { tag: 'SYSTEM DESIGN', title: 'System Design',        desc: 'Design scalable systems: APIs, databases, microservices architecture.',       duration: '45 min',    color: '#FFD166' },
+    { tag: 'CASE STUDY',    title: 'Case Study',           desc: 'Business and product case questions, metrics, and strategic thinking.',       duration: '30–40 min', color: '#FF6B6B' },
   ]
 
   return (
@@ -36,7 +36,17 @@ export default function InterviewPage() {
             </div>
             <h3 style={{ fontWeight: 700, fontSize: '1.05rem' }}>{t.title}</h3>
             <p style={{ fontSize: '0.875rem', color: 'var(--text-muted)', lineHeight: 1.6 }}>{t.desc}</p>
-            <button className="btn-primary" style={{ marginTop: '0.5rem' }}>Start →</button>
+
+            {/* Updated — now links to session page */}
+            <Link
+              href={`/interview/session?type=${t.tag.replace(' ', '_')}&role=Software Engineer`}
+              style={{ display: 'block' }}
+            >
+              <button className="btn-primary" style={{ marginTop: '0.5rem', width: '100%' }}>
+                Start →
+              </button>
+            </Link>
+
           </div>
         ))}
       </div>

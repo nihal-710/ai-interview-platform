@@ -6,6 +6,9 @@ datasource db {
   provider = "postgresql"
 }
 
+// ─────────────────────────────────────────
+// USER
+// ─────────────────────────────────────────
 model User {
   id        String   @id @default(cuid())
   email     String   @unique
@@ -15,22 +18,29 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  sessions  InterviewSession[]
-  resumes   Resume[]
+  sessions InterviewSession[]
+  resumes  Resume[]
 
   @@map("users")
 }
 
+// ─────────────────────────────────────────
+// INTERVIEW SESSION
+// One session = one full interview attempt
+// ─────────────────────────────────────────
 model InterviewSession {
-  id           String        @id @default(cuid())
-  userId       String
-  type         InterviewType
-  role         String
-  status       SessionStatus @default(IN_PROGRESS)
-  overallScore Int?
-  durationSecs Int?
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
+  id            String        @id @default(cuid())
+  userId        String
+  type          InterviewType
+  targetRole    String
+  status        SessionStatus @default(IN_PROGRESS)
+  overallScore  Int?
+  durationSecs  Int?
+  totalQuestions Int          @default(0)
+  answeredCount  Int          @default(0)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  completedAt   DateTime?
 
   user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
   questions Question[]
@@ -39,19 +49,48 @@ model InterviewSession {
   @@map("interview_sessions")
 }
 
+// ─────────────────────────────────────────
+// QUESTION
+// AI-generated question inside a session
+// ─────────────────────────────────────────
 model Question {
-  id        String   @id @default(cuid())
-  sessionId String
-  content   String
-  answer    String?
-  score     Int?
-  createdAt DateTime @default(now())
+  id         String   @id @default(cuid())
+  sessionId  String
+  content    String
+  orderIndex Int
+  category   String?
+  difficulty String?  @default("medium")
+  createdAt  DateTime @default(now())
 
-  session InterviewSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  session  InterviewSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  response Response?
 
   @@map("questions")
 }
 
+// ─────────────────────────────────────────
+// RESPONSE
+// User's answer to a specific question
+// ─────────────────────────────────────────
+model Response {
+  id          String   @id @default(cuid())
+  questionId  String   @unique
+  answer      String
+  score       Int?
+  aiFeedback  String?
+  timeTaken   Int?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  question Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@map("responses")
+}
+
+// ─────────────────────────────────────────
+// FEEDBACK
+// AI-generated overall session feedback
+// ─────────────────────────────────────────
 model Feedback {
   id           String   @id @default(cuid())
   sessionId    String   @unique
@@ -65,6 +104,9 @@ model Feedback {
   @@map("feedback")
 }
 
+// ─────────────────────────────────────────
+// RESUME
+// ─────────────────────────────────────────
 model Resume {
   id         String   @id @default(cuid())
   userId     String
@@ -79,6 +121,9 @@ model Resume {
   @@map("resumes")
 }
 
+// ─────────────────────────────────────────
+// ENUMS
+// ─────────────────────────────────────────
 enum Role {
   USER
   ADMIN
