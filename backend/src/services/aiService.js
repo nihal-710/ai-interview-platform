@@ -316,3 +316,120 @@ export const checkOllamaHealth = async () => {
     return { available: false, models: [] }
   }
 }
+
+
+// ─────────────────────────────────────────
+// INTERVIEWER GESTURE
+// Short human-like response after each answer
+// ─────────────────────────────────────────
+export const generateInterviewerGesture = async (question, answer, candidateName = 'there') => {
+  // Analyse answer quality before sending to AI
+  const words       = answer?.trim().split(/\s+/).filter(Boolean).length || 0
+  const lower       = answer?.toLowerCase() || ''
+
+  const isBlank     = words < 3
+  const isConfused  = lower.includes("don't know") || lower.includes("not sure") ||
+                      lower.includes("no idea")    || lower.includes("i dont know") ||
+                      lower.includes("unsure")     || lower.includes("cant answer") ||
+                      lower.includes("skip")       || words < 8
+  const isShort     = words >= 8  && words < 40
+  const isMedium    = words >= 40 && words < 100
+  const isDetailed  = words >= 100
+
+  // Build quality context for the prompt
+  const qualityContext = isBlank    ? 'The candidate gave NO answer or just a few meaningless words.'
+    : isConfused ? 'The candidate explicitly said they do not know the answer or are very unsure.'
+    : isShort    ? 'The candidate gave a very short and incomplete answer with little detail.'
+    : isMedium   ? 'The candidate gave a decent but brief answer that could use more depth.'
+    : isDetailed ? 'The candidate gave a detailed and thoughtful answer.'
+    : 'The candidate gave an average answer.'
+
+  // Strict examples mapped to quality
+  const examplesByQuality = isBlank || isConfused
+    ? `"No worries ${candidateName}, not everyone knows this one. Let's move on."
+"That's okay ${candidateName}, we can skip this. Next question."
+"Don't worry ${candidateName}, let's try the next one."`
+    : isShort
+    ? `"Could you expand on that a bit more, ${candidateName}? Interesting start though."
+"A brief response ${candidateName}, but let's keep going."
+"I'd love to hear more detail next time, ${candidateName}. Moving on."`
+    : isMedium
+    ? `"Good points ${candidateName}, let's continue."
+"Decent answer ${candidateName}, keep it up."
+"That works ${candidateName}, moving to the next one."`
+    : `"Excellent response ${candidateName}, very well articulated."
+"That's a great example ${candidateName}, really strong answer."
+"Well handled ${candidateName}, impressive detail."`
+
+  const prompt = `You are a professional interviewer. React naturally to this candidate's answer.
+
+Candidate name: ${candidateName}
+Question: ${question}
+Answer quality assessment: ${qualityContext}
+Candidate's actual answer: "${answer?.slice(0, 200) || 'no answer given'}"
+
+Your response MUST:
+- Be 8 to 15 words maximum
+- Directly reflect the answer quality described above
+- Use the candidate's name once
+- Sound natural and human
+- NOT be generic like "Thanks for sharing that"
+
+Example responses for this quality level:
+${examplesByQuality}
+
+Return ONLY your single sentence response, nothing else. No quotes, no explanation:`
+
+  try {
+    const response = await ollamaRequest(prompt)
+    const cleaned  = response
+      .trim()
+      .replace(/^["']|["']$/g, '')
+      .replace(/\n.*/s, '')
+      .slice(0, 150)
+
+    // Validate it's not too generic — if it is, use quality-based fallback
+    const tooGeneric = [
+      'thanks for sharing',
+      'thank you for sharing',
+      'great answer',
+      'well done',
+    ].some((phrase) => cleaned.toLowerCase().includes(phrase) && (isBlank || isConfused))
+
+    if (tooGeneric || !cleaned) throw new Error('Generic response detected')
+
+    return cleaned
+
+  } catch {
+    // Quality-based fallback responses
+    if (isBlank || isConfused) {
+      const fallbacks = [
+        `No worries ${candidateName}, not everyone knows this one. Let's move on.`,
+        `That's okay ${candidateName}, let's try the next question.`,
+        `Don't worry ${candidateName}, we can move on from this one.`,
+        `Totally fine ${candidateName}, let's keep going.`,
+      ]
+      return fallbacks[Math.floor(Math.random() * fallbacks.length)]
+    }
+
+    if (isShort) {
+      const fallbacks = [
+        `Brief answer ${candidateName}, but let's continue.`,
+        `I'd love more detail next time ${candidateName}. Moving on.`,
+        `Okay ${candidateName}, let's keep the momentum going.`,
+      ]
+      return fallbacks[Math.floor(Math.random() * fallbacks.length)]
+    }
+
+    if (isDetailed) {
+      const fallbacks = [
+        `Excellent response ${candidateName}, very well articulated.`,
+        `That's a strong answer ${candidateName}, great detail.`,
+        `Really impressive ${candidateName}, let's continue.`,
+      ]
+      return fallbacks[Math.floor(Math.random() * fallbacks.length)]
+    }
+
+    return `Good effort ${candidateName}, let's move on.`
+  }
+}

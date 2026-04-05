@@ -1,5 +1,6 @@
 import * as interviewService from '../services/interviewService.js'
 import { sendSuccess, sendError } from '../utils/response.js'
+import { generateInterviewerGesture } from '../services/aiService.js'
 
 // ─────────────────────────────────────────
 // POST /api/interview/start
@@ -112,5 +113,30 @@ export const completeSession = async (req, res) => {
   } catch (error) {
     console.error('[COMPLETE SESSION ERROR]', error)
     return sendError(res, 500, 'Failed to complete session.')
+  }
+}
+
+// ─────────────────────────────────────────
+// POST /api/interview/:sessionId/gesture
+// ─────────────────────────────────────────
+export const getInterviewerGesture = async (req, res) => {
+  try {
+    const { question, answer, candidateName } = req.body
+
+    if (!question || !answer) {
+      return sendError(res, 400, 'Question and answer are required.')
+    }
+
+    const gesture = await generateInterviewerGesture(
+      question,
+      answer,
+      candidateName || 'there'
+    )
+
+    return sendSuccess(res, 200, 'Gesture generated.', { gesture })
+
+  } catch (error) {
+    console.error('[GESTURE ERROR]', error)
+    return sendError(res, 500, 'Failed to generate gesture.')
   }
 }
