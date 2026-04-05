@@ -4,7 +4,9 @@ import { useState, useEffect, useCallback }  from 'react'
 import { useRouter, useSearchParams }         from 'next/navigation'
 import { getToken }                           from '@/lib/authService'
 import { useSpeechRecognition }               from '@/hooks/useSpeechRecognition'
+import { useVideoRecorder }                   from '@/hooks/useVideoRecorder'
 import MicButton                              from '@/components/MicButton'
+import WebcamPreview                          from '@/components/WebcamPreview'
 
 type Question = {
   id:         string
@@ -31,39 +33,55 @@ export default function InterviewSessionPage() {
   const router       = useRouter()
   const searchParams = useSearchParams()
 
-  const [session,    setSession]    = useState<Session | null>(null)
-  const [currentIdx, setCurrentIdx] = useState(0)
-  const [answer,     setAnswer]     = useState('')
-  const [loading,    setLoading]    = useState(true)
-  const [submitting, setSubmitting] = useState(false)
-  const [error,      setError]      = useState('')
-  const [timer,      setTimer]      = useState(0)
-  const [startTime,  setStartTime]  = useState(Date.now())
+  const [session,       setSession]       = useState<Session | null>(null)
+  const [currentIdx,    setCurrentIdx]    = useState(0)
+  const [answer,        setAnswer]        = useState('')
+  const [loading,       setLoading]       = useState(true)
+  const [submitting,    setSubmitting]    = useState(false)
+  const [error,         setError]         = useState('')
+  const [timer,         setTimer]         = useState(0)
+  const [startTime,     setStartTime]     = useState(Date.now())
+  const [cameraEnabled, setCameraEnabled] = useState(false)
+  const [isMinimized,   setIsMinimized]   = useState(false)
+  const [sessionDone,   setSessionDone]   = useState(false)
 
   const interviewType = searchParams.get('type') || 'BEHAVIORAL'
   const targetRole    = searchParams.get('role') || 'Software Engineer'
 
-  // Speech recognition hook
+  // Speech recognition
   const {
     transcript,
     interimText,
     isListening,
-    isSupported,
-    error: speechError,
+    isSupported: speechSupported,
+    error:       speechError,
     startListening,
     stopListening,
     clearTranscript,
     setTranscript,
   } = useSpeechRecognition()
 
-  // Sync speech transcript into answer textarea
+  // Video recorder
+  const {
+    status:       videoStatus,
+    isRecording,
+    isSupported:  videoSupported,
+    videoUrl,
+    error:        videoError,
+    streamRef,
+    startCamera,
+    startRecording,
+    stopRecording,
+    downloadVideo,
+    releaseCamera,
+  } = useVideoRecorder()
+
+  // Sync speech to textarea
   useEffect(() => {
-    if (transcript) {
-      setAnswer(transcript)
-    }
+    if (transcript) setAnswer(transcript)
   }, [transcript])
 
-  // Reset transcript when moving to next question
+  // Reset on question change
   useEffect(() => {
     clearTranscript()
     setAnswer('')
@@ -82,22 +100,23 @@ export default function InterviewSessionPage() {
           },
           body: JSON.stringify({ interviewType, targetRole }),
         })
-
         const data = await res.json()
         if (!data.success) { setError(data.message); return }
-
         setSession(data.data.session)
         setStartTime(Date.now())
-
       } catch {
         setError('Could not start session. Make sure backend is running.')
       } finally {
         setLoading(false)
       }
     }
-
     startSession()
   }, [interviewType, targetRole])
+
+  // Cleanup camera on unmount
+  useEffect(() => {
+    return () => { releaseCamera() }
+  }, [])
 
   // Timer
   useEffect(() => {
@@ -113,13 +132,24 @@ export default function InterviewSessionPage() {
     return `${m}:${s}`
   }
 
+  // Toggle camera
+  const handleToggleCamera = async () => {
+    if (cameraEnabled) {
+      stopRecording()
+      releaseCamera()
+      setCameraEnabled(false)
+    } else {
+      await startCamera()
+      setCameraEnabled(true)
+      startRecording()
+    }
+  }
+
   const handleSubmitAnswer = async () => {
     if (!session || !answer.trim()) return
-
-    // Stop recording if still active
     if (isListening) stopListening()
-
     setSubmitting(true)
+
     const currentQuestion = session.questions[currentIdx]
     const timeTaken       = Math.floor((Date.now() - startTime) / 1000)
 
@@ -144,7 +174,6 @@ export default function InterviewSessionPage() {
       } else {
         await handleComplete()
       }
-
     } catch {
       setError('Failed to submit answer.')
     } finally {
@@ -154,6 +183,10 @@ export default function InterviewSessionPage() {
 
   const handleComplete = useCallback(async () => {
     if (!session) return
+
+    // Stop recording when interview ends
+    if (isRecording) stopRecording()
+
     try {
       const token = getToken()
       const res   = await fetch(`${API}/interview/${session.id}/complete`, {
@@ -161,11 +194,13 @@ export default function InterviewSessionPage() {
         headers: { 'Authorization': `Bearer ${token}` },
       })
       const data = await res.json()
-      if (data.success) router.push(`/result?sessionId=${session.id}`)
+      if (data.success) {
+        setSessionDone(true)
+      }
     } catch {
       setError('Failed to complete session.')
     }
-  }, [session, router])
+  }, [session, isRecording, stopRecording])
 
   // ── Loading ──
   if (loading) {
@@ -189,6 +224,43 @@ export default function InterviewSessionPage() {
     )
   }
 
+  // ── Session complete — show download screen ──
+  if (sessionDone) {
+    return (
+      <main style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '1.5rem', padding: '2rem' }}>
+        <div style={{ textAlign: 'center' }}>
+          <p style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>🎉</p>
+          <h1 style={{ fontSize: '1.75rem', fontWeight: 800, marginBottom: '0.5rem' }}>Interview Complete!</h1>
+          <p style={{ color: 'var(--text-muted)' }}>AI is evaluating your answers...</p>
+        </div>
+
+        {/* Download recording if available */}
+        {videoUrl && session && (
+          <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '16px', padding: '1.5rem', textAlign: 'center', maxWidth: '400px', width: '100%' }}>
+            <p style={{ fontWeight: 600, marginBottom: '0.5rem' }}>Your recording is ready</p>
+            <p style={{ fontSize: '0.875rem', color: 'var(--text-muted)', marginBottom: '1rem' }}>
+              Download your interview recording to review your performance.
+            </p>
+            <button
+              onClick={() => downloadVideo(session.id)}
+              style={{ background: 'var(--accent)', color: 'white', border: 'none', borderRadius: '10px', padding: '0.75rem 1.5rem', cursor: 'pointer', fontWeight: 700, marginBottom: '0.75rem', width: '100%' }}
+            >
+              ⬇ Download Recording
+            </button>
+          </div>
+        )}
+
+        <button
+          className="btn-primary"
+          style={{ width: 'auto', padding: '0.75rem 2rem' }}
+          onClick={() => router.push(`/result?sessionId=${session?.id}`)}
+        >
+          View Results →
+        </button>
+      </main>
+    )
+  }
+
   if (!session) return null
 
   const currentQuestion = session.questions[currentIdx]
@@ -198,6 +270,16 @@ export default function InterviewSessionPage() {
   return (
     <div style={{ minHeight: '100vh', padding: '2rem', maxWidth: '800px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
 
+      {/* Webcam preview — fixed position */}
+      {cameraEnabled && streamRef.current && (
+        <WebcamPreview
+          stream={streamRef.current}
+          isRecording={isRecording}
+          isMinimized={isMinimized}
+          onToggle={() => setIsMinimized((prev) => !prev)}
+        />
+      )}
+
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
@@ -206,13 +288,34 @@ export default function InterviewSessionPage() {
             {session.targetRole}
           </p>
         </div>
-        <div style={{ textAlign: 'right' }}>
-          <p style={{ fontFamily: 'monospace', fontSize: '1.5rem', fontWeight: 700, color: 'var(--accent)' }}>
-            {formatTime(timer)}
-          </p>
-          <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-            Question {currentIdx + 1} of {session.questions.length}
-          </p>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+          {/* Camera toggle */}
+          {videoSupported && (
+            <button
+              onClick={handleToggleCamera}
+              title={cameraEnabled ? 'Turn off camera' : 'Turn on camera'}
+              style={{
+                width: '36px', height: '36px',
+                borderRadius: '50%',
+                border: `1px solid ${cameraEnabled ? '#FF6B6B' : 'var(--border)'}`,
+                background: cameraEnabled ? 'rgba(255,107,107,0.15)' : 'var(--bg-surface)',
+                cursor: 'pointer',
+                fontSize: '1rem',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}
+            >
+              {cameraEnabled ? '📵' : '📷'}
+            </button>
+          )}
+
+          <div style={{ textAlign: 'right' }}>
+            <p style={{ fontFamily: 'monospace', fontSize: '1.5rem', fontWeight: 700, color: 'var(--accent)' }}>
+              {formatTime(timer)}
+            </p>
+            <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+              Question {currentIdx + 1} of {session.questions.length}
+            </p>
+          </div>
         </div>
       </div>
 
@@ -220,6 +323,13 @@ export default function InterviewSessionPage() {
       <div style={{ height: '4px', background: 'var(--border)', borderRadius: '999px' }}>
         <div style={{ height: '4px', background: 'var(--accent)', borderRadius: '999px', width: `${progress}%`, transition: 'width 0.3s ease' }} />
       </div>
+
+      {/* Video error */}
+      {videoError && (
+        <p style={{ fontSize: '0.8rem', color: '#FF6B6B', padding: '0.5rem 0.75rem', background: 'rgba(255,107,107,0.08)', borderRadius: '8px' }}>
+          Camera: {videoError}
+        </p>
+      )}
 
       {/* Question card */}
       <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '16px', padding: '1.75rem' }}>
@@ -239,27 +349,23 @@ export default function InterviewSessionPage() {
       {/* Answer area */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
 
-        {/* Label row */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
             Your Answer
           </label>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-            {/* Recording indicator */}
             {isListening && (
               <span style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.75rem', color: '#FF6B6B', fontWeight: 600 }}>
                 <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#FF6B6B', animation: 'pulse-ring 1s ease infinite', display: 'inline-block' }} />
                 Recording...
               </span>
             )}
-            {/* Word count */}
             <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
               {wordCount} words
             </span>
           </div>
         </div>
 
-        {/* Textarea + mic row */}
         <div style={{ position: 'relative' }}>
           <textarea
             className="field"
@@ -269,41 +375,32 @@ export default function InterviewSessionPage() {
               setAnswer(val)
               setTranscript(val)
             }}
-            placeholder={
-              isSupported
-                ? 'Type your answer or click 🎤 to speak...'
-                : 'Type your answer here...'
-            }
+            placeholder={speechSupported ? 'Type your answer or click 🎤 to speak...' : 'Type your answer here...'}
             rows={8}
             style={{ resize: 'vertical', fontFamily: 'inherit', lineHeight: 1.6, paddingRight: '3.5rem' }}
           />
-
-          {/* Mic button — positioned inside textarea */}
           <div style={{ position: 'absolute', bottom: '12px', right: '12px' }}>
             <MicButton
               isListening={isListening}
-              isSupported={isSupported}
+              isSupported={speechSupported}
               onStart={startListening}
               onStop={stopListening}
             />
           </div>
         </div>
 
-        {/* Speech error */}
         {speechError && (
           <p style={{ fontSize: '0.8rem', color: '#FF6B6B', padding: '0.5rem 0.75rem', background: 'rgba(255,107,107,0.08)', borderRadius: '8px' }}>
             {speechError}
           </p>
         )}
 
-        {/* Interim text preview */}
         {interimText && (
           <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
             Hearing: "{interimText}"
           </p>
         )}
 
-        {/* Helper row */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
             Aim for 100–250 words · You can edit spoken text before submitting
