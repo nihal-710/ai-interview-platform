@@ -127,6 +127,7 @@ model Result {
   answeredQuestions Int
   totalTimeSecs     Int?
   scoringVersion    String   @default("v1-placeholder")
+  behavioralAnalytics Json?
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 

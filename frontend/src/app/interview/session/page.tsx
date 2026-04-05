@@ -5,6 +5,8 @@ import { useRouter, useSearchParams }                from 'next/navigation'
 import { getToken, getUser }                         from '@/lib/authService'
 import { useSpeechRecognition }                      from '@/hooks/useSpeechRecognition'
 import { useVideoRecorder }                          from '@/hooks/useVideoRecorder'
+import { useVoiceAnalytics }                         from '@/hooks/useVoiceAnalytics'
+import { useFacePresence }                           from '@/hooks/useFacePresence'
 import MicButton                                     from '@/components/MicButton'
 import WebcamPreview                                 from '@/components/WebcamPreview'
 
@@ -45,54 +47,51 @@ export default function InterviewSessionPage() {
   const [isMinimized,   setIsMinimized]   = useState(false)
   const [sessionDone,   setSessionDone]   = useState(false)
 
-  // Interviewer gesture states
   const [gesture,        setGesture]        = useState<string | null>(null)
   const [showGesture,    setShowGesture]    = useState(false)
   const [gestureLoading, setGestureLoading] = useState(false)
-  const gestureTimerRef  = useRef<NodeJS.Timeout | null>(null)
+  const gestureTimerRef = useRef<NodeJS.Timeout | null>(null)
 
   const interviewType = searchParams.get('type') || 'BEHAVIORAL'
   const targetRole    = searchParams.get('role') || 'Software Engineer'
   const mode          = searchParams.get('mode') || 'text'
   const isVideoMode   = mode === 'video'
 
-  // Get logged in user name
   const user          = getUser()
   const candidateName = user?.name?.split(' ')[0] || 'there'
 
-  // Speech recognition
+  // ── Hooks ──
   const {
-    transcript,
-    interimText,
-    isListening,
-    isSupported:  speechSupported,
-    error:        speechError,
-    startListening,
-    stopListening,
-    clearTranscript,
-    setTranscript,
+    transcript, interimText, isListening,
+    isSupported: speechSupported, error: speechError,
+    startListening, stopListening, clearTranscript, setTranscript,
   } = useSpeechRecognition()
 
-  // Video recorder
   const {
-    isRecording,
-    isSupported:  videoSupported,
-    videoUrl,
-    error:        videoError,
-    streamRef,
-    startCamera,
-    startRecording,
-    stopRecording,
-    downloadVideo,
-    releaseCamera,
+    isRecording, isSupported: videoSupported, videoUrl,
+    error: videoError, streamRef,
+    startCamera, startRecording, stopRecording, downloadVideo, releaseCamera,
   } = useVideoRecorder()
 
-  // Sync speech to textarea
+  const {
+    startTracking:    startVoice,
+    stopTracking:     stopVoice,
+    recordAnswerStart,
+    onQuestionSubmit: recordQuestionMetric,
+  } = useVoiceAnalytics()
+
+  const {
+    
+    startTracking: startFaceTracking,
+    stopTracking:  stopFaceTracking,
+  } = useFacePresence()
+
+  // ── Sync speech to textarea ──
   useEffect(() => {
     if (transcript) setAnswer(transcript)
   }, [transcript])
 
-  // Reset on question change
+  // ── Reset on question change ──
   useEffect(() => {
     clearTranscript()
     setAnswer('')
@@ -100,21 +99,23 @@ export default function InterviewSessionPage() {
     setShowGesture(false)
   }, [currentIdx])
 
-  // Auto-start camera + mic in video mode
+  // ── Auto-start camera + mic in video mode ──
   useEffect(() => {
     if (isVideoMode && videoSupported && !loading) {
       const initVideo = async () => {
         await startCamera()
         setCameraEnabled(true)
         startRecording()
+        if (streamRef.current) {
+          startFaceTracking(streamRef.current)
+        }
       }
       initVideo()
-
       if (speechSupported) startListening()
     }
   }, [isVideoMode, videoSupported, loading])
 
-  // Start session on mount
+  // ── Start session on mount ──
   useEffect(() => {
     const startSession = async () => {
       try {
@@ -131,6 +132,10 @@ export default function InterviewSessionPage() {
         if (!data.success) { setError(data.message); return }
         setSession(data.data.session)
         setStartTime(Date.now())
+
+        // Start voice tracking after session loads
+        await startVoice(streamRef.current || undefined)
+
       } catch {
         setError('Could not start session. Make sure backend is running.')
       } finally {
@@ -140,7 +145,7 @@ export default function InterviewSessionPage() {
     startSession()
   }, [interviewType, targetRole])
 
-  // Cleanup on unmount
+  // ── Cleanup on unmount ──
   useEffect(() => {
     return () => {
       releaseCamera()
@@ -148,7 +153,7 @@ export default function InterviewSessionPage() {
     }
   }, [])
 
-  // Timer
+  // ── Timer ──
   useEffect(() => {
     const interval = setInterval(() => {
       setTimer(Math.floor((Date.now() - startTime) / 1000))
@@ -162,8 +167,8 @@ export default function InterviewSessionPage() {
     return `${m}:${s}`
   }
 
-  // Fetch interviewer gesture after answer submission
-  const fetchGesture = async (question: string, answer: string) => {
+  // ── Interviewer gesture ──
+  const fetchGesture = async (question: string, ans: string) => {
     setGestureLoading(true)
     try {
       const token = getToken()
@@ -173,38 +178,39 @@ export default function InterviewSessionPage() {
           'Content-Type':  'application/json',
           'Authorization': `Bearer ${token}`,
         },
-        body: JSON.stringify({ question, answer, candidateName }),
+        body: JSON.stringify({ question, answer: ans, candidateName }),
       })
       const data = await res.json()
       if (data.success) {
         setGesture(data.data.gesture)
         setShowGesture(true)
-
-        // Auto-hide gesture after 4 seconds
-        gestureTimerRef.current = setTimeout(() => {
-          setShowGesture(false)
-        }, 4000)
+        gestureTimerRef.current = setTimeout(() => setShowGesture(false), 4000)
       }
     } catch {
-      // Silently fail — gesture is non-critical
+      // Non-critical — silently fail
     } finally {
       setGestureLoading(false)
     }
   }
 
-  // Toggle camera manually (text mode)
+  // ── Toggle camera manually (text mode) ──
   const handleToggleCamera = async () => {
     if (cameraEnabled) {
       stopRecording()
+      stopFaceTracking()
       releaseCamera()
       setCameraEnabled(false)
     } else {
       await startCamera()
       setCameraEnabled(true)
       startRecording()
+      if (streamRef.current) {
+        startFaceTracking(streamRef.current)
+      }
     }
   }
 
+  // ── Submit answer ──
   const handleSubmitAnswer = async () => {
     if (!session || !answer.trim()) return
     if (isListening) stopListening()
@@ -216,7 +222,6 @@ export default function InterviewSessionPage() {
     try {
       const token = getToken()
 
-      // Submit answer
       await fetch(`${API}/interview/${session.id}/respond`, {
         method:  'POST',
         headers: {
@@ -230,16 +235,18 @@ export default function InterviewSessionPage() {
         }),
       })
 
-      // Fetch interviewer gesture in parallel
+      // Record voice metric for this question
+      recordQuestionMetric(answer.trim(), currentIdx)
+
+      // Fetch gesture in parallel
       fetchGesture(currentQuestion.content, answer.trim())
 
-      // Wait briefly so gesture shows before moving
+      // Brief pause so gesture shows
       await new Promise((r) => setTimeout(r, 2200))
 
       if (currentIdx < session.questions.length - 1) {
         setCurrentIdx((prev) => prev + 1)
         setStartTime(Date.now())
-        // Resume mic in video mode
         if (isVideoMode && speechSupported) startListening()
       } else {
         await handleComplete()
@@ -252,23 +259,52 @@ export default function InterviewSessionPage() {
     }
   }
 
+  // ── Complete session ──
   const handleComplete = useCallback(async () => {
     if (!session) return
     if (isRecording) stopRecording()
     if (isListening) stopListening()
 
+    // Stop behavioral tracking and collect data
+    const voiceData = stopVoice()
+    const faceData  = cameraEnabled ? stopFaceTracking() : null
+
     try {
       const token = getToken()
-      const res   = await fetch(`${API}/interview/${session.id}/complete`, {
+
+      // Complete the session
+      const res  = await fetch(`${API}/interview/${session.id}/complete`, {
         method:  'POST',
         headers: { 'Authorization': `Bearer ${token}` },
       })
       const data = await res.json()
-      if (data.success) setSessionDone(true)
+
+      if (data.success) {
+        // Save behavioral analytics
+        try {
+          await fetch(`${API}/results/${session.id}/behavioral`, {
+            method:  'POST',
+            headers: {
+              'Content-Type':  'application/json',
+              'Authorization': `Bearer ${token}`,
+            },
+            body: JSON.stringify({
+              behavioral: {
+                voice: voiceData,
+                face:  faceData,
+              },
+            }),
+          })
+        } catch {
+          // Non-critical — continue even if this fails
+        }
+
+        setSessionDone(true)
+      }
     } catch {
       setError('Failed to complete session.')
     }
-  }, [session, isRecording, isListening])
+  }, [session, isRecording, isListening, cameraEnabled])
 
   // ── Loading ──
   if (loading) {
@@ -365,7 +401,6 @@ export default function InterviewSessionPage() {
           </p>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-          {/* Manual camera toggle — text mode only */}
           {!isVideoMode && videoSupported && (
             <button
               onClick={handleToggleCamera}
@@ -397,29 +432,23 @@ export default function InterviewSessionPage() {
         <div style={{ height: '4px', background: 'var(--accent)', borderRadius: '999px', width: `${progress}%`, transition: 'width 0.3s ease' }} />
       </div>
 
+      
+
       {/* Interviewer gesture bubble */}
       {showGesture && gesture && (
         <div style={{
-          display:      'flex',
-          alignItems:   'flex-start',
-          gap:          '0.75rem',
-          padding:      '1rem 1.25rem',
-          background:   'rgba(108,99,255,0.08)',
-          border:       '1px solid rgba(108,99,255,0.25)',
+          display: 'flex', alignItems: 'flex-start', gap: '0.75rem',
+          padding: '1rem 1.25rem',
+          background: 'rgba(108,99,255,0.08)',
+          border: '1px solid rgba(108,99,255,0.25)',
           borderRadius: '14px',
-          animation:    'fadeIn 0.3s ease',
+          animation: 'fadeIn 0.3s ease',
         }}>
-          {/* Interviewer avatar */}
           <div style={{
-            width:          '36px',
-            height:         '36px',
-            borderRadius:   '50%',
-            background:     'var(--accent)',
-            display:        'flex',
-            alignItems:     'center',
-            justifyContent: 'center',
-            fontSize:       '1rem',
-            flexShrink:     0,
+            width: '36px', height: '36px', borderRadius: '50%',
+            background: 'var(--accent)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: '1rem', flexShrink: 0,
           }}>
             🤵
           </div>
@@ -434,7 +463,7 @@ export default function InterviewSessionPage() {
         </div>
       )}
 
-      {/* Gesture loading */}
+      {/* Gesture loading dots */}
       {gestureLoading && !showGesture && (
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.75rem 1.25rem', background: 'var(--bg-card)', borderRadius: '14px', border: '1px solid var(--border)' }}>
           <div style={{ width: '36px', height: '36px', borderRadius: '50%', background: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1rem', flexShrink: 0 }}>

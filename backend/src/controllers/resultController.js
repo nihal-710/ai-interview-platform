@@ -1,5 +1,6 @@
 import * as resultService from '../services/resultService.js'
 import { sendSuccess, sendError } from '../utils/response.js'
+import { prisma } from '../config/prisma.js'
 
 // ─────────────────────────────────────────
 // POST /api/results/generate/:sessionId
@@ -56,5 +57,36 @@ export const getUserHistory = async (req, res) => {
   } catch (error) {
     console.error('[GET HISTORY ERROR]', error)
     return sendError(res, 500, 'Failed to fetch result history.')
+  }
+}
+
+
+// ─────────────────────────────────────────
+// POST /api/results/:sessionId/behavioral
+// ─────────────────────────────────────────
+export const saveBehavioralAnalytics = async (req, res) => {
+  try {
+    const { sessionId }  = req.params
+    const { behavioral } = req.body
+    const userId         = req.user.id
+
+    const result = await prisma.result.findFirst({
+      where: { sessionId, userId },
+    })
+
+    if (!result) {
+      return sendError(res, 404, 'Result not found. Generate result first.')
+    }
+
+    const updated = await prisma.result.update({
+      where: { id: result.id },
+      data:  { behavioralAnalytics: behavioral },
+    })
+
+    return sendSuccess(res, 200, 'Behavioral analytics saved.', { result: updated })
+
+  } catch (error) {
+    console.error('[BEHAVIORAL ERROR]', error)
+    return sendError(res, 500, 'Failed to save behavioral analytics.')
   }
 }

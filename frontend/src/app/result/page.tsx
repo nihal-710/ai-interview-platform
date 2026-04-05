@@ -7,6 +7,23 @@ import { getToken }              from '@/lib/authService'
 
 const API = process.env.NEXT_PUBLIC_API_URL
 
+type BehavioralAnalytics = {
+  voice: {
+    wordsPerMinute:   number
+    fillerWordCount:  number
+    fillerWordsFound: string[]
+    talkTimeRatio:    number
+    avgAnswerDelay:   number
+    longestPause:     number
+    totalWords:       number
+  }
+  face: {
+    faceDetectedPercent: number
+    lookingAwayCount:    number
+    avgBrightness:       string
+  } | null
+}
+
 type QuestionScore = {
   questionId:   string
   orderIndex:   number
@@ -31,6 +48,7 @@ type Result = {
   totalQuestions:    number
   answeredQuestions: number
   scoringVersion:    string
+  behavioralAnalytics?: { voice: any; face: any } | null
   session: {
     type:       string
     targetRole: string
@@ -249,6 +267,100 @@ export default function ResultPage() {
           Scoring: {result.scoringVersion} · AI-powered scoring coming soon
         </p>
       </div>
+
+      {/* Behavioral Analytics */}
+{result.behavioralAnalytics?.voice && (
+  <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '16px', padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+    <h2 style={{ fontWeight: 700 }}>Behavioral Analytics</h2>
+    <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+      Measured automatically during your interview session.
+    </p>
+
+    {/* Voice metrics grid */}
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '1rem' }}>
+      {[
+        {
+          label: 'Speaking Pace',
+          value: `${result.behavioralAnalytics.voice.wordsPerMinute} wpm`,
+          status: result.behavioralAnalytics.voice.wordsPerMinute >= 110 && result.behavioralAnalytics.voice.wordsPerMinute <= 160 ? 'good' : 'warn',
+          hint: '110–160 wpm is ideal',
+        },
+        {
+          label: 'Talk Time',
+          value: `${result.behavioralAnalytics.voice.talkTimeRatio}%`,
+          status: result.behavioralAnalytics.voice.talkTimeRatio >= 60 ? 'good' : 'warn',
+          hint: 'Aim for 60%+ talk time',
+        },
+        {
+          label: 'Filler Words',
+          value: `${result.behavioralAnalytics.voice.fillerWordCount} detected`,
+          status: result.behavioralAnalytics.voice.fillerWordCount <= 5 ? 'good' : 'warn',
+          hint: 'Keep under 5 per session',
+        },
+        {
+          label: 'Avg Answer Delay',
+          value: `${result.behavioralAnalytics.voice.avgAnswerDelay}s`,
+          status: result.behavioralAnalytics.voice.avgAnswerDelay <= 5 ? 'good' : 'warn',
+          hint: 'Under 5s is confident',
+        },
+      ].map((metric) => (
+        <div key={metric.label} style={{ background: 'var(--bg-surface)', borderRadius: '12px', padding: '1rem', border: `1px solid ${metric.status === 'good' ? 'rgba(0,229,176,0.2)' : 'rgba(255,209,102,0.2)'}` }}>
+          <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>{metric.label}</p>
+          <p style={{ fontSize: '1.25rem', fontWeight: 800, color: metric.status === 'good' ? '#00E5B0' : '#FFD166' }}>
+            {metric.value}
+          </p>
+          <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>{metric.hint}</p>
+        </div>
+      ))}
+    </div>
+
+    {/* Filler words found */}
+    {result.behavioralAnalytics.voice.fillerWordsFound?.length > 0 && (
+      <div>
+        <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.5rem', fontWeight: 600 }}>
+          FILLER WORDS DETECTED
+        </p>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+          {result.behavioralAnalytics.voice.fillerWordsFound.map((f: string) => (
+            <span key={f} style={{ fontSize: '0.75rem', padding: '0.2rem 0.65rem', borderRadius: '999px', background: 'rgba(255,209,102,0.1)', color: '#FFD166', border: '1px solid rgba(255,209,102,0.3)' }}>
+              {f}
+            </span>
+          ))}
+        </div>
+      </div>
+    )}
+
+    {/* Face presence */}
+    {result.behavioralAnalytics.face && (
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem' }}>
+        {[
+          {
+            label: 'Face in Frame',
+            value: `${result.behavioralAnalytics.face.faceDetectedPercent}%`,
+            status: result.behavioralAnalytics.face.faceDetectedPercent >= 80 ? 'good' : 'warn',
+          },
+          {
+            label: 'Look Away Events',
+            value: `${result.behavioralAnalytics.face.lookingAwayCount}x`,
+            status: result.behavioralAnalytics.face.lookingAwayCount <= 3 ? 'good' : 'warn',
+          },
+          {
+            label: 'Lighting',
+            value: result.behavioralAnalytics.face.avgBrightness,
+            status: result.behavioralAnalytics.face.avgBrightness === 'Good lighting' ? 'good' : 'warn',
+          },
+        ].map((metric) => (
+          <div key={metric.label} style={{ background: 'var(--bg-surface)', borderRadius: '12px', padding: '1rem', border: `1px solid ${metric.status === 'good' ? 'rgba(0,229,176,0.2)' : 'rgba(255,209,102,0.2)'}` }}>
+            <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>{metric.label}</p>
+            <p style={{ fontSize: '1rem', fontWeight: 800, color: metric.status === 'good' ? '#00E5B0' : '#FFD166' }}>
+              {metric.value}
+            </p>
+          </div>
+        ))}
+      </div>
+    )}
+  </div>
+)}
 
       {/* CTAs */}
       <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
