@@ -14,7 +14,7 @@ const ACTIVE_MODEL = process.env.OLLAMA_MODEL || 'qwen2.5'
 // ─────────────────────────────────────────
 // CORE OLLAMA REQUEST
 // ─────────────────────────────────────────
-const ollamaRequest = async (prompt, retries = 1) => {
+export const ollamaRequest = async (prompt, retries = 1) => {
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
       const res = await fetch(OLLAMA_URL, {
@@ -48,7 +48,7 @@ const ollamaRequest = async (prompt, retries = 1) => {
 // SAFE JSON PARSER
 // Extracts JSON from LLM response safely
 // ─────────────────────────────────────────
-const parseJSON = (text) => {
+export const parseJSON = (text) => {
   try {
     // Try direct parse first
     return JSON.parse(text)

@@ -141,13 +141,19 @@ model Result {
 // RESUME
 // ─────────────────────────────────────────
 model Resume {
-  id         String   @id @default(cuid())
-  userId     String
-  fileName   String
-  fileUrl    String
-  parsedText String?
-  score      Int?
-  createdAt  DateTime @default(now())
+  id              String   @id @default(cuid())
+  userId          String
+  fileName        String
+  filePath        String
+  extractedText   String?
+  targetRole      String?
+  resumeScore     Int?
+  matchedSkills   String[]
+  missingSkills   String[]
+  focusAreas      String[]
+  recommendations String[]
+  uploadedAt      DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
