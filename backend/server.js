@@ -12,7 +12,14 @@ const app = express()
 
 // ── Security & parsing ──────────────────────────────────────────
 app.use(helmet())
-app.use(cors({ origin: config.clientUrl, credentials: true }))
+app.use(cors({
+  origin: [
+    config.clientUrl,
+    'https://ai-interview-platform-five-rosy.vercel.app',
+    'http://localhost:3000',
+  ],
+  credentials: true,
+}))
 app.use(express.json())
 app.use(express.urlencoded({ extended: true }))
 
