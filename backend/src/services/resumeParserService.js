@@ -1,14 +1,14 @@
 import fs from 'fs'
-import pdfParse from 'pdf-parse'
 
-/**
- * Extract and clean text from a PDF file
- */
 export const extractTextFromPDF = async (filePath) => {
   try {
     const buffer = fs.readFileSync(filePath)
-    const data   = await pdfParse(buffer)
-    const raw    = data.text || ''
+    
+    // Import pdf-parse lazily to avoid the test file bug
+    const { default: pdfParse } = await import('pdf-parse/lib/pdf-parse.js')
+    
+    const data    = await pdfParse(buffer)
+    const raw     = data.text || ''
 
     const cleaned = raw
       .replace(/\r\n/g, '\n')
