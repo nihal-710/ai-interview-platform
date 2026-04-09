@@ -1,6 +1,8 @@
-import { ollamaRequest, parseJSON } from './aiService.js'
+import Groq from 'groq-sdk'
+import { parseJSON } from './aiService.js'
 
-// Skills expected per role
+const groq = new Groq({ apiKey: process.env.GROQ_API_KEY })
+
 const ROLE_SKILLS = {
   'Software Engineer':    ['JavaScript', 'TypeScript', 'Node.js', 'React', 'SQL', 'Git', 'REST APIs', 'Problem Solving', 'Data Structures'],
   'Frontend Developer':   ['React', 'TypeScript', 'CSS', 'HTML', 'Next.js', 'Tailwind', 'Figma', 'Performance Optimization'],
@@ -12,11 +14,13 @@ const ROLE_SKILLS = {
   'DevOps Engineer':      ['Docker', 'Kubernetes', 'CI/CD', 'Linux', 'AWS', 'Terraform', 'Monitoring'],
 }
 
-/**
- * Analyse resume text against a target role using Ollama
- */
 export const analyseResume = async (resumeText, targetRole) => {
   const expectedSkills = ROLE_SKILLS[targetRole] || ROLE_SKILLS['Software Engineer']
+
+  if (!resumeText || resumeText.trim().length < 50) {
+    console.error('[RESUME ANALYSIS] Resume text too short or empty:', resumeText?.length)
+    return getFallbackAnalysis(resumeText || '', targetRole, expectedSkills)
+  }
 
   const prompt = `You are an expert technical recruiter and career coach.
 Analyse this resume for the role of ${targetRole}.
@@ -24,7 +28,7 @@ Analyse this resume for the role of ${targetRole}.
 Expected skills for this role: ${expectedSkills.join(', ')}
 
 Resume content:
-${resumeText}
+${resumeText.slice(0, 3000)}
 
 Analyse the resume and return ONLY valid JSON in this exact format:
 {
@@ -49,10 +53,20 @@ Rules:
 - Return ONLY the JSON, no explanation`
 
   try {
-    const response = await ollamaRequest(prompt)
-    const parsed   = parseJSON(response)
+    const completion = await groq.chat.completions.create({
+      model:    process.env.GROQ_MODEL || 'llama3-8b-8192',
+      messages: [{ role: 'user', content: prompt }],
+      max_tokens: 1000,
+      temperature: 0.3,
+    })
+
+    const response = completion.choices[0]?.message?.content || ''
+    console.log('[RESUME ANALYSIS] Groq raw response:', response.slice(0, 200))
+
+    const parsed = parseJSON(response)
 
     if (!parsed || typeof parsed.resumeScore !== 'number') {
+      console.error('[RESUME ANALYSIS] Invalid parsed response:', parsed)
       throw new Error('Invalid AI response format')
     }
 
@@ -65,16 +79,18 @@ Rules:
     }
 
   } catch (error) {
-    console.error('[RESUME ANALYSIS] AI failed, using fallback:', error.message)
+    console.error('[RESUME ANALYSIS] Groq failed, using fallback:', error.message)
     return getFallbackAnalysis(resumeText, targetRole, expectedSkills)
   }
 }
 
 const getFallbackAnalysis = (text, role, expectedSkills) => {
-  const lower        = text.toLowerCase()
-  const matched      = expectedSkills.filter((s) => lower.includes(s.toLowerCase()))
-  const missing      = expectedSkills.filter((s) => !lower.includes(s.toLowerCase()))
-  const score        = Math.round((matched.length / expectedSkills.length) * 100)
+  const lower   = text.toLowerCase()
+  const matched = expectedSkills.filter((s) => lower.includes(s.toLowerCase()))
+  const missing = expectedSkills.filter((s) => !lower.includes(s.toLowerCase()))
+  const score   = expectedSkills.length > 0
+    ? Math.round((matched.length / expectedSkills.length) * 100)
+    : 0
 
   return {
     resumeScore:     Math.min(score, 85),
