@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, Suspense } from 'react'
 import { useRouter, useSearchParams }                from 'next/navigation'
 import { getToken, getUser }                         from '@/lib/authService'
 import { useSpeechRecognition }                      from '@/hooks/useSpeechRecognition'
@@ -31,7 +31,7 @@ type Session = {
 
 const API = process.env.NEXT_PUBLIC_API_URL
 
-export default function InterviewSessionPage() {
+function InterviewSessionContent() {
   const router       = useRouter()
   const searchParams = useSearchParams()
 
@@ -60,7 +60,6 @@ export default function InterviewSessionPage() {
   const user          = getUser()
   const candidateName = user?.name?.split(' ')[0] || 'there'
 
-  // ── Hooks ──
   const {
     transcript, interimText, isListening,
     isSupported: speechSupported, error: speechError,
@@ -81,17 +80,14 @@ export default function InterviewSessionPage() {
   } = useVoiceAnalytics()
 
   const {
-    
     startTracking: startFaceTracking,
     stopTracking:  stopFaceTracking,
   } = useFacePresence()
 
-  // ── Sync speech to textarea ──
   useEffect(() => {
     if (transcript) setAnswer(transcript)
   }, [transcript])
 
-  // ── Reset on question change ──
   useEffect(() => {
     clearTranscript()
     setAnswer('')
@@ -99,7 +95,6 @@ export default function InterviewSessionPage() {
     setShowGesture(false)
   }, [currentIdx])
 
-  // ── Auto-start camera + mic in video mode ──
   useEffect(() => {
     if (isVideoMode && videoSupported && !loading) {
       const initVideo = async () => {
@@ -115,7 +110,6 @@ export default function InterviewSessionPage() {
     }
   }, [isVideoMode, videoSupported, loading])
 
-  // ── Start session on mount ──
   useEffect(() => {
     const startSession = async () => {
       try {
@@ -132,10 +126,7 @@ export default function InterviewSessionPage() {
         if (!data.success) { setError(data.message); return }
         setSession(data.data.session)
         setStartTime(Date.now())
-
-        // Start voice tracking after session loads
         await startVoice(streamRef.current || undefined)
-
       } catch {
         setError('Could not start session. Make sure backend is running.')
       } finally {
@@ -145,7 +136,6 @@ export default function InterviewSessionPage() {
     startSession()
   }, [interviewType, targetRole])
 
-  // ── Cleanup on unmount ──
   useEffect(() => {
     return () => {
       releaseCamera()
@@ -153,7 +143,6 @@ export default function InterviewSessionPage() {
     }
   }, [])
 
-  // ── Timer ──
   useEffect(() => {
     const interval = setInterval(() => {
       setTimer(Math.floor((Date.now() - startTime) / 1000))
@@ -167,7 +156,6 @@ export default function InterviewSessionPage() {
     return `${m}:${s}`
   }
 
-  // ── Interviewer gesture ──
   const fetchGesture = async (question: string, ans: string) => {
     setGestureLoading(true)
     try {
@@ -193,7 +181,6 @@ export default function InterviewSessionPage() {
     }
   }
 
-  // ── Toggle camera manually (text mode) ──
   const handleToggleCamera = async () => {
     if (cameraEnabled) {
       stopRecording()
@@ -210,7 +197,6 @@ export default function InterviewSessionPage() {
     }
   }
 
-  // ── Submit answer ──
   const handleSubmitAnswer = async () => {
     if (!session || !answer.trim()) return
     if (isListening) stopListening()
@@ -235,13 +221,8 @@ export default function InterviewSessionPage() {
         }),
       })
 
-      // Record voice metric for this question
       recordQuestionMetric(answer.trim(), currentIdx)
-
-      // Fetch gesture in parallel
       fetchGesture(currentQuestion.content, answer.trim())
-
-      // Brief pause so gesture shows
       await new Promise((r) => setTimeout(r, 2200))
 
       if (currentIdx < session.questions.length - 1) {
@@ -259,20 +240,17 @@ export default function InterviewSessionPage() {
     }
   }
 
-  // ── Complete session ──
   const handleComplete = useCallback(async () => {
     if (!session) return
     if (isRecording) stopRecording()
     if (isListening) stopListening()
 
-    // Stop behavioral tracking and collect data
     const voiceData = stopVoice()
     const faceData  = cameraEnabled ? stopFaceTracking() : null
 
     try {
       const token = getToken()
 
-      // Complete the session
       const res  = await fetch(`${API}/interview/${session.id}/complete`, {
         method:  'POST',
         headers: { 'Authorization': `Bearer ${token}` },
@@ -280,7 +258,6 @@ export default function InterviewSessionPage() {
       const data = await res.json()
 
       if (data.success) {
-        // Save behavioral analytics
         try {
           await fetch(`${API}/results/${session.id}/behavioral`, {
             method:  'POST',
@@ -306,7 +283,6 @@ export default function InterviewSessionPage() {
     }
   }, [session, isRecording, isListening, cameraEnabled])
 
-  // ── Loading ──
   if (loading) {
     return (
       <main style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '1rem' }}>
@@ -316,7 +292,6 @@ export default function InterviewSessionPage() {
     )
   }
 
-  // ── Error ──
   if (error) {
     return (
       <main style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: '1rem' }}>
@@ -328,7 +303,6 @@ export default function InterviewSessionPage() {
     )
   }
 
-  // ── Session complete ──
   if (sessionDone) {
     return (
       <main style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '1.5rem', padding: '2rem' }}>
@@ -375,7 +349,6 @@ export default function InterviewSessionPage() {
   return (
     <div style={{ minHeight: '100vh', padding: '2rem', maxWidth: '800px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
 
-      {/* Webcam preview */}
       {cameraEnabled && streamRef.current && (
         <WebcamPreview
           stream={streamRef.current}
@@ -385,7 +358,6 @@ export default function InterviewSessionPage() {
         />
       )}
 
-      {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
           <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
@@ -413,7 +385,7 @@ export default function InterviewSessionPage() {
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
               }}
             >
-              {cameraEnabled ? '📵' : '📷'}
+              {cameraEnabled ? '🔵' : '📷'}
             </button>
           )}
           <div style={{ textAlign: 'right' }}>
@@ -427,14 +399,10 @@ export default function InterviewSessionPage() {
         </div>
       </div>
 
-      {/* Progress bar */}
       <div style={{ height: '4px', background: 'var(--border)', borderRadius: '999px' }}>
         <div style={{ height: '4px', background: 'var(--accent)', borderRadius: '999px', width: `${progress}%`, transition: 'width 0.3s ease' }} />
       </div>
 
-      
-
-      {/* Interviewer gesture bubble */}
       {showGesture && gesture && (
         <div style={{
           display: 'flex', alignItems: 'flex-start', gap: '0.75rem',
@@ -463,7 +431,6 @@ export default function InterviewSessionPage() {
         </div>
       )}
 
-      {/* Gesture loading dots */}
       {gestureLoading && !showGesture && (
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.75rem 1.25rem', background: 'var(--bg-card)', borderRadius: '14px', border: '1px solid var(--border)' }}>
           <div style={{ width: '36px', height: '36px', borderRadius: '50%', background: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1rem', flexShrink: 0 }}>
@@ -477,14 +444,12 @@ export default function InterviewSessionPage() {
         </div>
       )}
 
-      {/* Video error */}
       {videoError && (
         <p style={{ fontSize: '0.8rem', color: '#FF6B6B', padding: '0.5rem 0.75rem', background: 'rgba(255,107,107,0.08)', borderRadius: '8px' }}>
           Camera: {videoError}
         </p>
       )}
 
-      {/* Question card */}
       <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '16px', padding: '1.75rem' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
           <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
@@ -499,7 +464,6 @@ export default function InterviewSessionPage() {
         </p>
       </div>
 
-      {/* Answer area */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
@@ -574,7 +538,6 @@ export default function InterviewSessionPage() {
         </div>
       </div>
 
-      {/* Actions */}
       <div style={{ display: 'flex', gap: '1rem', justifyContent: 'flex-end' }}>
         <button
           onClick={() => router.push('/dashboard')}
@@ -596,5 +559,19 @@ export default function InterviewSessionPage() {
         </button>
       </div>
     </div>
+  )
+}
+
+// ── Default export wrapped in Suspense ──
+export default function InterviewSessionPage() {
+  return (
+    <Suspense fallback={
+      <main style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '1rem' }}>
+        <div style={{ width: '40px', height: '40px', border: '3px solid var(--border)', borderTop: '3px solid var(--accent)', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
+        <p style={{ color: 'var(--text-muted)' }}>Loading session...</p>
+      </main>
+    }>
+      <InterviewSessionContent />
+    </Suspense>
   )
 }
