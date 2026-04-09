@@ -1,40 +1,45 @@
 /**
  * AI SERVICE — Provider Abstraction Layer
  *
- * Currently uses Ollama (local, free)
- * To switch to OpenAI or Claude later:
- *   1. Add new provider function
- *   2. Change ACTIVE_PROVIDER constant
- *   3. Nothing else changes
+ * Current provider: Groq API (free, fast, cloud)
+ * Models: llama3-8b-8192, mixtral-8x7b-32768, gemma2-9b-it
+ *
+ * To switch providers later:
+ * Change ACTIVE_PROVIDER constant only
+ * Everything else stays identical
  */
 
-const OLLAMA_URL   = 'http://localhost:11434/api/generate'
-const ACTIVE_MODEL = process.env.OLLAMA_MODEL || 'qwen2.5'
+const GROQ_URL    = 'https://api.groq.com/openai/v1/chat/completions'
+const GROQ_MODEL  = process.env.GROQ_MODEL  || 'llama3-8b-8192'
+const GROQ_API_KEY = process.env.GROQ_API_KEY
 
 // ─────────────────────────────────────────
-// CORE OLLAMA REQUEST
+// CORE GROQ REQUEST
 // ─────────────────────────────────────────
 export const ollamaRequest = async (prompt, retries = 1) => {
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
-      const res = await fetch(OLLAMA_URL, {
+      const res = await fetch(GROQ_URL, {
         method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type':  'application/json',
+          'Authorization': `Bearer ${GROQ_API_KEY}`,
+        },
         body: JSON.stringify({
-          model:  ACTIVE_MODEL,
-          prompt,
-          stream: false,
-          options: {
-            temperature: 0.7,
-            num_predict: 1024,
-          },
+          model:       GROQ_MODEL,
+          messages:    [{ role: 'user', content: prompt }],
+          temperature: 0.7,
+          max_tokens:  1024,
         }),
       })
 
-      if (!res.ok) throw new Error(`Ollama responded with ${res.status}`)
+      if (!res.ok) {
+        const err = await res.json()
+        throw new Error(err.error?.message || `Groq error ${res.status}`)
+      }
 
       const data = await res.json()
-      return data.response
+      return data.choices[0]?.message?.content || ''
 
     } catch (error) {
       console.error(`[AI SERVICE] Attempt ${attempt + 1} failed:`, error.message)
@@ -46,32 +51,26 @@ export const ollamaRequest = async (prompt, retries = 1) => {
 
 // ─────────────────────────────────────────
 // SAFE JSON PARSER
-// Extracts JSON from LLM response safely
 // ─────────────────────────────────────────
 export const parseJSON = (text) => {
   try {
-    // Try direct parse first
     return JSON.parse(text)
   } catch {
-    // Extract JSON block from markdown
     const match = text.match(/```json\s*([\s\S]*?)\s*```/)
     if (match) {
       try { return JSON.parse(match[1]) } catch {}
     }
-
-    // Find first { or [ and parse from there
     const start = text.search(/[\[{]/)
     const end   = Math.max(text.lastIndexOf('}'), text.lastIndexOf(']'))
     if (start !== -1 && end !== -1) {
       try { return JSON.parse(text.slice(start, end + 1)) } catch {}
     }
-
     return null
   }
 }
 
 // ─────────────────────────────────────────
-// PART 1 — GENERATE QUESTIONS
+// GENERATE QUESTIONS
 // ─────────────────────────────────────────
 export const generateQuestions = async (role, interviewType, difficulty = 'medium') => {
   const prompt = `You are an expert technical interviewer. Generate exactly 5 interview questions.
@@ -111,7 +110,6 @@ Generate 5 questions now:`
         orderIndex: i + 1,
       }))
     }
-
     throw new Error('Invalid question format from AI')
 
   } catch (error) {
@@ -121,14 +119,14 @@ Generate 5 questions now:`
 }
 
 // ─────────────────────────────────────────
-// PART 2 — EVALUATE ANSWER
+// EVALUATE ANSWER
 // ─────────────────────────────────────────
 export const evaluateAnswer = async (question, answer, interviewType) => {
   if (!answer || answer.trim().length < 10) {
     return {
-      score:       0,
-      feedback:    'No answer provided.',
-      strengths:   [],
+      score:        0,
+      feedback:     'No answer provided.',
+      strengths:    [],
       improvements: ['Provide a detailed answer to this question.'],
     }
   }
@@ -164,7 +162,6 @@ Rules:
         improvements: parsed.improvements || [],
       }
     }
-
     throw new Error('Invalid evaluation format from AI')
 
   } catch (error) {
@@ -174,14 +171,14 @@ Rules:
 }
 
 // ─────────────────────────────────────────
-// PART 3 — GENERATE SESSION SUMMARY
+// GENERATE SESSION SUMMARY
 // ─────────────────────────────────────────
 export const generateSessionSummary = async (role, interviewType, questionEvaluations) => {
-  const avgScore    = Math.round(
+  const avgScore  = Math.round(
     questionEvaluations.reduce((sum, q) => sum + q.score, 0) / questionEvaluations.length
   )
-  const answered    = questionEvaluations.filter((q) => q.score > 0).length
-  const total       = questionEvaluations.length
+  const answered  = questionEvaluations.filter((q) => q.score > 0).length
+  const total     = questionEvaluations.length
 
   const evalSummary = questionEvaluations
     .map((q, i) => `Q${i + 1}: Score ${q.score}/100 — ${q.feedback}`)
@@ -225,7 +222,6 @@ Return ONLY the JSON:`
         nextSteps:          parsed.nextSteps          || 'Keep practising regularly.',
       }
     }
-
     throw new Error('Invalid summary format')
 
   } catch (error) {
@@ -235,108 +231,20 @@ Return ONLY the JSON:`
 }
 
 // ─────────────────────────────────────────
-// FALLBACK FUNCTIONS
-// Used when Ollama is unavailable
-// ─────────────────────────────────────────
-const getFallbackQuestions = (role, interviewType, difficulty) => {
-  const bank = {
-    BEHAVIORAL: [
-      'Tell me about yourself and your professional background.',
-      'Describe a time you faced a significant challenge. How did you handle it?',
-      'Tell me about a time you worked with a difficult team member.',
-      'Describe a situation where you had to meet a tight deadline.',
-      'What is your greatest professional achievement so far?',
-    ],
-    TECHNICAL: [
-      `Explain the core technical skills required for a ${role} role.`,
-      'What is the difference between an array and a linked list?',
-      'Explain RESTful API design principles.',
-      'How do you approach debugging a production issue?',
-      'What is your experience with databases and query optimization?',
-    ],
-    SYSTEM_DESIGN: [
-      'Design a URL shortening service. Walk me through your approach.',
-      'How would you design a scalable notification system?',
-      'Explain the trade-offs between SQL and NoSQL databases.',
-      'How would you design a rate limiting system?',
-      'Walk me through designing a caching layer for a web application.',
-    ],
-    CASE_STUDY: [
-      'User engagement dropped 20% last month. How would you investigate this?',
-      'How would you prioritise features with a limited engineering budget?',
-      'How would you measure the success of a newly launched feature?',
-      'Walk me through launching a new product in a competitive market.',
-      'A competitor released a similar feature. How do you respond?',
-    ],
-  }
-
-  const questions = bank[interviewType] || bank.BEHAVIORAL
-  return questions.map((content, i) => ({
-    content,
-    category:   interviewType,
-    difficulty,
-    orderIndex: i + 1,
-  }))
-}
-
-const getFallbackEvaluation = (answer) => {
-  const words = answer?.trim().split(/\s+/).length || 0
-  const score = Math.min(100, Math.round((words / 200) * 100))
-  return {
-    score,
-    feedback:     'Answer evaluated using basic scoring (AI unavailable).',
-    strengths:    words > 100 ? ['Good answer length'] : [],
-    improvements: words < 50  ? ['Provide more detail in your answer'] : [],
-  }
-}
-
-const getFallbackSummary = (avgScore, answered, total) => ({
-  overallFeedback:    `You completed ${answered} of ${total} questions with an average score of ${avgScore}%.`,
-  communicationScore: avgScore,
-  technicalScore:     avgScore,
-  confidenceScore:    avgScore,
-  topStrengths:       ['Completed the interview session'],
-  topImprovements:    ['Practice more to improve your scores'],
-  nextSteps:          'Review your answers and practice regularly.',
-})
-
-// ─────────────────────────────────────────
-// HEALTH CHECK
-// ─────────────────────────────────────────
-export const checkOllamaHealth = async () => {
-  try {
-    const res = await fetch('http://localhost:11434/api/tags')
-    if (!res.ok) return { available: false, models: [] }
-    const data = await res.json()
-    return {
-      available: true,
-      models: data.models?.map((m) => m.name) || [],
-    }
-  } catch {
-    return { available: false, models: [] }
-  }
-}
-
-
-// ─────────────────────────────────────────
 // INTERVIEWER GESTURE
-// Short human-like response after each answer
 // ─────────────────────────────────────────
 export const generateInterviewerGesture = async (question, answer, candidateName = 'there') => {
-  // Analyse answer quality before sending to AI
-  const words       = answer?.trim().split(/\s+/).filter(Boolean).length || 0
-  const lower       = answer?.toLowerCase() || ''
+  const words    = answer?.trim().split(/\s+/).filter(Boolean).length || 0
+  const lower    = answer?.toLowerCase() || ''
 
-  const isBlank     = words < 3
-  const isConfused  = lower.includes("don't know") || lower.includes("not sure") ||
-                      lower.includes("no idea")    || lower.includes("i dont know") ||
-                      lower.includes("unsure")     || lower.includes("cant answer") ||
-                      lower.includes("skip")       || words < 8
-  const isShort     = words >= 8  && words < 40
-  const isMedium    = words >= 40 && words < 100
-  const isDetailed  = words >= 100
+  const isBlank    = words < 3
+  const isConfused = lower.includes("don't know") || lower.includes("not sure") ||
+                     lower.includes("no idea")    || lower.includes("i dont know") ||
+                     lower.includes("unsure")     || words < 8
+  const isShort    = words >= 8  && words < 40
+  const isMedium   = words >= 40 && words < 100
+  const isDetailed = words >= 100
 
-  // Build quality context for the prompt
   const qualityContext = isBlank    ? 'The candidate gave NO answer or just a few meaningless words.'
     : isConfused ? 'The candidate explicitly said they do not know the answer or are very unsure.'
     : isShort    ? 'The candidate gave a very short and incomplete answer with little detail.'
@@ -344,7 +252,6 @@ export const generateInterviewerGesture = async (question, answer, candidateName
     : isDetailed ? 'The candidate gave a detailed and thoughtful answer.'
     : 'The candidate gave an average answer.'
 
-  // Strict examples mapped to quality
   const examplesByQuality = isBlank || isConfused
     ? `"No worries ${candidateName}, not everyone knows this one. Let's move on."
 "That's okay ${candidateName}, we can skip this. Next question."
@@ -388,7 +295,6 @@ Return ONLY your single sentence response, nothing else. No quotes, no explanati
       .replace(/\n.*/s, '')
       .slice(0, 150)
 
-    // Validate it's not too generic — if it is, use quality-based fallback
     const tooGeneric = [
       'thanks for sharing',
       'thank you for sharing',
@@ -397,39 +303,71 @@ Return ONLY your single sentence response, nothing else. No quotes, no explanati
     ].some((phrase) => cleaned.toLowerCase().includes(phrase) && (isBlank || isConfused))
 
     if (tooGeneric || !cleaned) throw new Error('Generic response detected')
-
     return cleaned
 
   } catch {
-    // Quality-based fallback responses
-    if (isBlank || isConfused) {
-      const fallbacks = [
-        `No worries ${candidateName}, not everyone knows this one. Let's move on.`,
-        `That's okay ${candidateName}, let's try the next question.`,
-        `Don't worry ${candidateName}, we can move on from this one.`,
-        `Totally fine ${candidateName}, let's keep going.`,
-      ]
-      return fallbacks[Math.floor(Math.random() * fallbacks.length)]
-    }
-
-    if (isShort) {
-      const fallbacks = [
-        `Brief answer ${candidateName}, but let's continue.`,
-        `I'd love more detail next time ${candidateName}. Moving on.`,
-        `Okay ${candidateName}, let's keep the momentum going.`,
-      ]
-      return fallbacks[Math.floor(Math.random() * fallbacks.length)]
-    }
-
-    if (isDetailed) {
-      const fallbacks = [
-        `Excellent response ${candidateName}, very well articulated.`,
-        `That's a strong answer ${candidateName}, great detail.`,
-        `Really impressive ${candidateName}, let's continue.`,
-      ]
-      return fallbacks[Math.floor(Math.random() * fallbacks.length)]
-    }
-
+    if (isBlank || isConfused) return `No worries ${candidateName}, let's try the next question.`
+    if (isShort)               return `Brief answer ${candidateName}, but let's continue.`
+    if (isDetailed)            return `Excellent response ${candidateName}, very well articulated.`
     return `Good effort ${candidateName}, let's move on.`
   }
 }
+
+// ─────────────────────────────────────────
+// HEALTH CHECK
+// ─────────────────────────────────────────
+export const checkOllamaHealth = async () => {
+  try {
+    if (!GROQ_API_KEY) return { available: false, models: [] }
+
+    const res = await fetch('https://api.groq.com/openai/v1/models', {
+      headers: { 'Authorization': `Bearer ${GROQ_API_KEY}` },
+    })
+
+    if (!res.ok) return { available: false, models: [] }
+
+    const data   = await res.json()
+    const models = data.data?.map((m) => m.id) || []
+
+    return { available: true, models }
+
+  } catch {
+    return { available: false, models: [] }
+  }
+}
+
+// ─────────────────────────────────────────
+// FALLBACKS
+// ─────────────────────────────────────────
+const getFallbackQuestions = (role, interviewType, difficulty) => {
+  const bank = {
+    BEHAVIORAL:    ['Tell me about yourself.', 'Describe a challenge you faced.', 'Tell me about a time you led a team.', 'How do you handle tight deadlines?', 'What is your greatest achievement?'],
+    TECHNICAL:     [`What are the core skills needed for ${role}?`, 'Explain REST API principles.', 'What is the difference between SQL and NoSQL?', 'How do you approach debugging?', 'Explain your most complex technical project.'],
+    SYSTEM_DESIGN: ['Design a URL shortener.', 'How would you design a chat app?', 'Explain caching strategies.', 'Design a rate limiter.', 'How would you scale a web application?'],
+    CASE_STUDY:    ['User engagement dropped 20%. Investigate.', 'How do you prioritise features?', 'How do you measure feature success?', 'Walk through launching a new product.', 'A competitor copied your feature. Respond.'],
+  }
+  return (bank[interviewType] || bank.BEHAVIORAL).map((content, i) => ({
+    content, category: interviewType, difficulty, orderIndex: i + 1,
+  }))
+}
+
+const getFallbackEvaluation = (answer) => {
+  const words = answer?.trim().split(/\s+/).length || 0
+  const score = Math.min(100, Math.round((words / 200) * 100))
+  return {
+    score,
+    feedback:     'Answer evaluated using basic scoring.',
+    strengths:    words > 100 ? ['Good answer length'] : [],
+    improvements: words < 50  ? ['Provide more detail'] : [],
+  }
+}
+
+const getFallbackSummary = (avgScore, answered, total) => ({
+  overallFeedback:    `You completed ${answered} of ${total} questions with an average score of ${avgScore}%.`,
+  communicationScore: avgScore,
+  technicalScore:     avgScore,
+  confidenceScore:    avgScore,
+  topStrengths:       ['Completed the interview session'],
+  topImprovements:    ['Practice more to improve scores'],
+  nextSteps:          'Review your answers and practice regularly.',
+})
