@@ -27,6 +27,10 @@
 | Results — Summary | Results — Detail |
 |-------------------|-----------------|
 | ![results1](./docs/screenshots/results1.png) | ![results2](./docs/screenshots/results2.png) |
+
+| Resume Analyzer — Upload | Resume Analyzer — Results |
+|--------------------------|--------------------------|
+| ![resume1](./docs/screenshots/resume1.png) | ![resume2](./docs/screenshots/resume2.png) |
 ---
 
 ## ✨ Features
