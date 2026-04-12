@@ -20,12 +20,13 @@
 
 ## 📸 Screenshots
 
-> _Add screenshots of: Landing Page, Dashboard, Interview Session, Results Page, Resume Analyzer_
+| Dashboard | Interview Session |
+|-----------|------------------|
+| ![dashboard](./docs/screenshots/dashboard.png) | ![session](./docs/screenshots/session.png) |
 
-| Dashboard | Interview Session | Results |
-|-----------|------------------|---------|
-| ![dashboard](./docs/screenshots/dashboard.png) | ![session](./docs/screenshots/session.png) | ![results](./docs/screenshots/results.png) |
-
+| Results — Summary | Results — Detail |
+|-------------------|-----------------|
+| ![results1](./docs/screenshots/results1.png) | ![results2](./docs/screenshots/results2.png) |
 ---
 
 ## ✨ Features
