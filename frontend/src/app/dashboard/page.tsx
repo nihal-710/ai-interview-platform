@@ -194,7 +194,7 @@ export default function DashboardPage() {
           {[
             { label: 'Dashboard',       href: '/dashboard',      active: true  },
             { label: 'Start Interview', href: '/interview',      active: false },
-            { label: 'Past Results',    href: '/result/history', active: false },
+            { label: 'Past Results', href: '/result/history', active: false },
             { label: 'Resume Analysis', href: '/resume',         active: false },
           ].map((item) => (
             <Link key={item.label} href={item.href} style={{
