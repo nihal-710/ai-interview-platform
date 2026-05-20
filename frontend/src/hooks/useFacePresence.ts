@@ -29,6 +29,7 @@ export const useFacePresence = () => {
   const lookAwayRef     = useRef<number>(0)
   const prevFaceRef     = useRef<boolean>(true)
   const brightnessRef   = useRef<number[]>([])
+  const consecutiveFailsRef   = useRef<number>(0)
 
   // ─────────────────────────────────────────
   // START TRACKING
@@ -55,6 +56,7 @@ export const useFacePresence = () => {
     checksRef.current = []
     lookAwayRef.current   = 0
     brightnessRef.current = []
+    consecutiveFailsRef.current = 0
     setIsTracking(true)
 
     // Check face presence every 3 seconds

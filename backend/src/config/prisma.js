@@ -1,7 +1,7 @@
 import dotenv from 'dotenv'
-import path from 'path'
+import path   from 'path'
 import { fileURLToPath } from 'url'
-import pg from 'pg'
+import pg          from 'pg'
 import { PrismaPg } from '@prisma/adapter-pg'
 import { PrismaClient } from '@prisma/client'
 
