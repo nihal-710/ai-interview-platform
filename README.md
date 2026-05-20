@@ -3,7 +3,7 @@
 > Practice interviews with AI-generated questions, get real-time feedback powered by Groq LLM, analyze your resume, and track your performance over time.
 
 [![Live Demo](https://img.shields.io/badge/Live%20Demo-Vercel-black?style=for-the-badge&logo=vercel)](https://ai-interview-platform-five-rosy.vercel.app)
-[![Backend](https://img.shields.io/badge/Backend-Railway-purple?style=for-the-badge&logo=railway)](https://railway.app)
+[![Backend](https://img.shields.io/badge/Backend-Render-blue?style=for-the-badge&logo=render)](https://render.com)
 [![Database](https://img.shields.io/badge/Database-Supabase-green?style=for-the-badge&logo=supabase)](https://supabase.com)
 [![AI](https://img.shields.io/badge/AI-Groq%20LLM-orange?style=for-the-badge)](https://groq.com)
 ![Next.js](https://img.shields.io/badge/Next.js-16-black?style=for-the-badge&logo=next.js)
@@ -56,7 +56,7 @@
 └─────────────────────┬───────────────────────────────────────┘
                       │ HTTPS REST API
 ┌─────────────────────▼───────────────────────────────────────┐
-│                      BACKEND (Railway)                       │
+│                      BACKEND (Render)                       │
 │         Express.js · JWT Auth · Layered Architecture         │
 │   Routes → Controllers → Services → Prisma ORM              │
 └──────────┬──────────────────────────┬───────────────────────┘
@@ -108,7 +108,7 @@
 | Service | Purpose |
 |---------|---------|
 | Vercel | Frontend hosting + CDN |
-| Railway | Backend Node.js hosting |
+| Render | Backend Node.js hosting |
 | Supabase | Managed PostgreSQL database |
 | Groq API | LLM inference (Llama3-8b-8192) |
 
@@ -237,7 +237,7 @@ ai-interview-platform/
 GitHub (main branch)
      │
      ├──→ Vercel          (auto-deploy frontend on push)
-     └──→ Railway         (auto-deploy backend on push)
+     └──→ Render         (auto-deploy backend on push)
                 │
                 └──→ Supabase PostgreSQL (always-on managed DB)
 ```
@@ -375,7 +375,7 @@ npx prisma studio
 | **AI Integration** | Groq LLM API for question generation, answer evaluation, resume analysis, and interviewer gestures |
 | **Database Modeling** | Normalized PostgreSQL schema with Prisma ORM, cascade deletes, enum types |
 | **Authentication** | JWT-based auth with bcrypt hashing, protected middleware, token validation |
-| **Deployment Pipelines** | GitHub → Vercel (frontend) + Railway (backend) + Supabase (DB), fully automated CI/CD |
+| **Deployment Pipelines** | GitHub → Vercel (frontend) + Render (backend) + Supabase (DB), fully automated CI/CD |
 | **Browser APIs** | Web Speech API (STT), MediaRecorder API (video), real-time UI feedback |
 | **Analytics Dashboards** | Aggregated SQL queries, SVG trend charts, skill frequency analysis |
 | **Error Handling** | Fallback strategies for AI failures, graceful degradation, structured error responses |
